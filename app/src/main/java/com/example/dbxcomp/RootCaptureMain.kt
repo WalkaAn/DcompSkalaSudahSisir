@@ -22,8 +22,8 @@ import kotlin.system.exitProcess
  */
 object RootCaptureMain {
     private const val SOURCE_REMOTE_SUBMIX = 8  // MediaRecorder.AudioSource.REMOTE_SUBMIX (hidden)
-    private const val SILENT_REFRESH_MS = 400L   // senyap selama ini -> buat ulang perekam
-    private const val ZERO_REFRESH_MS = 600L     // read terus 0 selama ini -> buat ulang
+    private const val SILENT_REFRESH_MS = 100L   // senyap selama ini -> buat ulang perekam
+    private const val ZERO_REFRESH_MS = 200L     // read terus 0 selama ini -> buat ulang
     private const val STALL_MS = 1500L           // read tidak kembali selama ini -> pengawas turun tangan
     private const val SILENCE_LEVEL = 8          // |sampel| <= 8 (dari 32768) dianggap senyap
 
