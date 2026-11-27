@@ -15,17 +15,14 @@ import kotlin.system.exitProcess
  * stereo little-endian mentah ke stdout. Aplikasi membaca stdout itu di [RootCaptureService].
  * Pesan error ditulis ke stderr dengan awalan "ERR:".
  *
- * Pemulihan: saat pemutar (mis. YouTube) pause atau ganti video, sesi audionya ditutup dan
- * perekam REMOTE_SUBMIX di sebagian HP macet atau tidak menerima suara baru. Karena itu perekam
- * dibuat ulang bila (a) senyap terus-menerus beberapa saat, (b) read mengembalikan 0 / error,
- * atau (c) read tidak kembali sama sekali (dijaga thread pengawas).
+ * Pemulihan uji tahap 1: kesenyapan tidak lagi memicu pembuatan ulang AudioRecord. Perekam
+ * hanya dipulihkan bila read menghasilkan 0 terlalu lama, read mengembalikan error, atau read
+ * tidak kembali (dijaga thread pengawas).
  */
 object RootCaptureMain {
     private const val SOURCE_REMOTE_SUBMIX = 8  // MediaRecorder.AudioSource.REMOTE_SUBMIX (hidden)
-    private const val SILENT_REFRESH_MS = 990L   // senyap selama ini -> buat ulang perekam
-    private const val ZERO_REFRESH_MS = 900L     // read terus 0 selama ini -> buat ulang
-    private const val STALL_MS = 500L           // read tidak kembali selama ini -> pengawas turun tangan
-    private const val SILENCE_LEVEL = 8          // |sampel| <= 8 (dari 32768) dianggap senyap
+    private const val ZERO_REFRESH_MS = 600L     // read terus 0 selama ini -> buat ulang
+    private const val STALL_MS = 1500L           // read tidak kembali selama ini -> pengawas turun tangan
 
     @Volatile
     private var rec: AudioRecord? = null
@@ -62,15 +59,6 @@ object RootCaptureMain {
         }
     }
 
-    private fun isSilent(buf: ByteArray, n: Int): Boolean {
-        var i = 0
-        while (i + 1 < n) {
-            val s = (buf[i + 1].toInt() shl 8) or (buf[i].toInt() and 0xff)
-            if (abs(s.toShort().toInt()) > SILENCE_LEVEL) return false
-            i += 2
-        }
-        return true
-    }
 
     @JvmStatic
     fun main(args: Array<String>) {
@@ -127,8 +115,6 @@ object RootCaptureMain {
         }.also { it.isDaemon = true; it.start() }
 
         val buf = ByteArray(rate / 100 * 4)  // ~10 ms stereo 16-bit
-        val silentLimitBytes = rate.toLong() * 4 * SILENT_REFRESH_MS / 1000
-        var silentBytes = 0L
         var zeroSince = 0L
         var openFails = 0
         var readErrors = 0
@@ -155,15 +141,6 @@ object RootCaptureMain {
                     out.write(buf, 0, n)  // pipa putus -> IOException -> keluar
                     zeroSince = 0L
                     readErrors = 0
-                    if (isSilent(buf, n)) {
-                        silentBytes += n
-                        if (silentBytes >= silentLimitBytes) {
-                            silentBytes = 0L
-                            reopen()  // senyap lama: segarkan, siapa tahu sesi lama sudah mati
-                        }
-                    } else {
-                        silentBytes = 0L
-                    }
                 } else if (n == 0) {
                     val now = System.currentTimeMillis()
                     if (zeroSince == 0L) zeroSince = now
